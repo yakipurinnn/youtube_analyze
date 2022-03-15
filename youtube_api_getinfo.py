@@ -16,19 +16,12 @@ from urllib.error import HTTPError
 import pandas as pd
 import numpy as np
 from youtube_sql2 import selenium_to_mysql
+from youtube_sql2 import open_json
 #pd.set_option("display.max_rows", None)
 from apiclient.discovery import build
 from apiclient.errors import HttpError
-from ch_list import ch_list
 import json
 
-
-def open_key_list(key_list_path):
-    #keyを複数保存する
-    key_list = open(key_list_path,"r")
-    key_list = json.load(key_list)
-
-    return key_list
 
 def pickle_load_list():    #pickleで保存したvideo_idのリストを返す
     with open("データ/video_stats.pkl", "rb") as f:
@@ -45,7 +38,7 @@ def pickle_load():    #pandasで保存したdata_frameを返す
 
 
 key_list_path = "key_list.json"
-key_list = open_key_list(key_list_path)
+key_list = open_json(key_list_path)
 
 class ytd_api:
     def __init__(self, api_key_list, dt_now=datetime.datetime.now()):
@@ -312,6 +305,9 @@ if __name__ == "__main__":
     mysql = api_to_mysql()
 
     current_id_list = mysql.fetch_video_id()
+    
+    ch_list_path = "ch_list.json"
+    ch_list = open_json(ch_list_path)
 
     youtube = ytd_api(key_list)
     video_data = youtube.serch_new_video(ch_list, current_id_list)

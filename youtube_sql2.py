@@ -20,11 +20,19 @@ from selenium.webdriver.common.by import By
 import numpy as np
 import pickle
 import pandas as pd
-from ch_list import ch_list
+import json
 #pd.set_option("display.max_rows", 500)    #表示を省略しない設定
 
 video_stats = pd.DataFrame(columns=["title", "href", "ch_name", "ch_url", "video_id", "published_date", "like_count"])    #データを格納するシート
 dt_now = datetime.datetime.now()
+
+
+def open_json(path):
+    #keyを複数保存する
+    json_data = open(path,"r", encoding="utf8")
+    json_data = json.load(json_data)
+
+    return json_data
 
 
 class get_video_info:
@@ -214,6 +222,9 @@ class selenium_to_mysql:    #mysqlのデータベースに保存
 
 
 if __name__ == "__main__":
+    ch_list_path = "ch_list.json"
+    ch_list = open_json(ch_list_path)
+
     ch_name = list(ch_list.keys())[0]
     ch_url = list(ch_list.values())[0]
 
