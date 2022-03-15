@@ -41,8 +41,9 @@ key_list_path = "key_list.json"
 key_list = open_json(key_list_path)
 
 class ytd_api:
-    def __init__(self, api_key_list, dt_now=datetime.datetime.now()):
-        self.video_stats = pd.DataFrame(columns=["video_id", "ch_name", "ch_url", "title", "published_date", "last_update", "private_flag", "comment_count", "like_count"])
+    def __init__(self, api_key_list):
+        self.video_stats = pd.DataFrame(columns=["video_id", "ch_name", "ch_url", "title", "published_date", \
+                                                    "private_flag", "comment_count", "like_count", "view_count"])
         
         self.api_key_list = iter(api_key_list.keys())
         self.key_number_list = iter(api_key_list.values())
@@ -51,14 +52,6 @@ class ytd_api:
         self.key_number = next(self.key_number_list)    #youtube_apiキーの番号を取り出す
 
         self.youtube = build("youtube", "v3", developerKey=self.ytd_apikey)
-
-        self.dt_now = dt_now    #現在の日付、時刻を取得
-        t_delta = int(self.dt_now.strftime("%M")) % 5
-
-        if not t_delta == 0:    #5分毎に時間を更新
-            self.dt_now = self.dt_now - datetime.timedelta(minutes=t_delta)
-
-        self.dt_now = self.dt_now.strftime("%Y-%m-%d %H:%M")  
 
     def next_key(self):
         self.ytd_apikey = next(self.api_key_list)
@@ -101,7 +94,6 @@ class ytd_api:
                 published_date += datetime.timedelta(hours=9)
                 published_date = published_date.replace(tzinfo=None)
 
-                last_update = self.dt_now
                 private_flag = 0
 
                 try:
@@ -123,12 +115,13 @@ class ytd_api:
                     like_count = 0
                     print(i, id, "高評価数が非公開です")
 
-                video_data = pd.DataFrame(data=[[id, ch_name, ch_url, title, published_date, last_update, private_flag, like_count, comment_count, view_count]], 
-                                            columns=["video_id", "ch_name", "ch_url", "title", "published_date", "last_update", "private_flag", "like_count", "comment_count", self.dt_now])
+                video_data = pd.DataFrame(data=[[id, ch_name, ch_url, title, published_date, private_flag, like_count, comment_count, view_count]], 
+                                            columns=["video_id", "ch_name", "ch_url", "title", "published_date", "private_flag", "like_count", \
+                                                "comment_count", "view_count"])
                 self.video_stats = pd.concat([self.video_stats, video_data], ignore_index=True)
                 print("key_number:", self.key_number, i, id, published_date, view_count)
                 if i == 0:
-                    self.video_stats = self.video_stats.astype({"title": "str", "like_count": "int", self.dt_now: "int"})  #int型に指定         
+                    self.video_stats = self.video_stats.astype({"title": "str", "like_count": "int", "view_count": "int"})  #int型に指定         
 
         #print(self.video_stats)
         return self.video_stats
@@ -210,8 +203,8 @@ class ytd_api:
         print(self.video_stats)
 
 class api_to_mysql(selenium_to_mysql):
-    def __init__(self, last_update=None, video_data=None, user="root", passwd="Takanori6157", host="localhost", db="holo_analyze"):
-        super().__init__(last_update=last_update, video_data=video_data, user=user, passwd=passwd, host=host, db=db)
+    def __init__(self, dt_now=datetime.datetime.now(), video_data=None, user="root", passwd="Takanori6157", host="localhost", db="holo_analyze"):
+        super().__init__(dt_now=dt_now, video_data=video_data, user=user, passwd=passwd, host=host, db=db)
 
     def api_update(self):
         try:
@@ -241,10 +234,10 @@ class api_to_mysql(selenium_to_mysql):
                 title = title.replace("'", "\\'")
 
             published_date = row["published_date"]
-            last_update = row["last_update"]
+            last_update = self.last_update
             like_count = row["like_count"]
             comment_count = row["comment_count"]
-            view_count = row[str(self.last_update)]
+            view_count = row["view_count"]
 
             #video_statsの更新
             print(index, video_id, title)
@@ -314,9 +307,7 @@ if __name__ == "__main__":
     video_data = youtube.extract_info(current_id_list)
     youtube.save()
 
-    last_update = youtube.dt_now
-
-    mysql = api_to_mysql(last_update, video_data)
+    mysql = api_to_mysql(video_data = video_data)
     mysql.api_update()
     mysql.assign_published_index()
     mysql.close()
@@ -328,10 +319,10 @@ if __name__ == "__main__":
 
     """
     youtube = ytd_api(key_list)
-    last_update = youtube.dt_now
+
     video_data = pickle_load()    #selenium_to mysqlでvideo_idをpickleで保存した場合
     print(video_data["video_id"])
-    mysql = api_to_mysql(last_update, video_data)
+    mysql = api_to_mysql(video_data = video_data)
     mysql.api_update()
     mysql.assign_published_index()
     mysql.close()

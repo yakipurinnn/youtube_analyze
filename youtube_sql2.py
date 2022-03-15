@@ -23,9 +23,6 @@ import pandas as pd
 import json
 #pd.set_option("display.max_rows", 500)    #表示を省略しない設定
 
-video_stats = pd.DataFrame(columns=["title", "href", "ch_name", "ch_url", "video_id", "published_date", "like_count"])    #データを格納するシート
-dt_now = datetime.datetime.now()
-
 
 def open_json(path):
     #keyを複数保存する
@@ -36,7 +33,7 @@ def open_json(path):
 
 
 class get_video_info:
-    def __init__ (self, ch_url, ch_name, video_stats, dt_now):
+    def __init__ (self, ch_url, ch_name):
         #wevdriverの起動
         self.driver = webdriver.Chrome()
         self.driver.get(ch_url)
@@ -47,16 +44,8 @@ class get_video_info:
         self.pre_info = self.driver.find_element(By.XPATH, "/html/body/ytd-app/div/ytd-page-manager/ytd-browse/ytd-two-column-browse-results-renderer/div[1]\
             /ytd-section-list-renderer/div[2]/ytd-item-section-renderer/div[3]/ytd-grid-renderer/div[1]")
 
-        self.video_stats = video_stats
+        self.video_stats = pd.DataFrame(columns=["title", "href", "ch_name", "ch_url", "video_id", "published_date", "like_count", "view_count"])    #データを格納するシート
         self.video_info = None
-
-        self.dt_now = dt_now   #現在の日付、時刻を取得
-        t_delta = int(self.dt_now.strftime("%M")) % 5
-
-        if not t_delta == 0:    #5分毎に時間を更新
-            self.dt_now = self.dt_now - datetime.timedelta(minutes=t_delta)
-
-        self.dt_now = self.dt_now.strftime("%Y-%m-%d %H:%M")  
 
     def web_scroll (self):
         pre_last_href = None
@@ -112,10 +101,10 @@ class get_video_info:
                         break
 
                 video_data = pd.DataFrame(data=[[title, href, self.ch_name, self.ch_url, video_id, view_count]], 
-                                            columns=["title", "href", "ch_name", "ch_url",  "video_id", self.dt_now])
+                                            columns=["title", "href", "ch_name", "ch_url",  "video_id", "view_count"])
                 self.video_stats = pd.concat([self.video_stats, video_data], ignore_index=True)     #ignore_index = True で空配列に新たな行番号を割り当てられる
                 if i == 0:
-                    self.video_stats = self.video_stats.astype({"title": "str", self.dt_now: "int"})    #再生回数をpandasのint型に指定
+                    self.video_stats = self.video_stats.astype({"title": "str", "view_count": "int"})    #再生回数をpandasのint型に指定
 
             #print(i+1, "再生数:", view_count, "回", "\n", href, "\n", title)
 
@@ -129,23 +118,27 @@ class get_video_info:
 
 
 class selenium_to_mysql:    #mysqlのデータベースに保存
-    def __init__  (self, last_update=None, video_data=None, user="root", passwd="Takanori6157", host="localhost", db="holo_analyze", create_trigger_flag=False):
+    def __init__  (self, dt_now=datetime.datetime.now(), video_data=None, user="root", passwd="Takanori6157", host="localhost", db="holo_analyze", create_trigger_flag=False):
         try:
-            if last_update is None:
-                print("注意: 引数 last_update が空です。メソッド fetch_video_id のみを使用する場合またはyoutube apiを利用する場合は無視して下さい")
             if video_data is None:
                 print("注意: 引数 video_data が空です。メソッド fetch_video_id のみを使用する場合またはyoutube apiを利用する場合は無視して下さい")
         except Exception as e:
             print(type(e), e) 
 
+        self.dt_now = dt_now    #現在の日付、時刻を取得
+        t_delta = int(self.dt_now.strftime("%M")) % 5
+
+        if not t_delta == 0:    #5分毎に時間を更新
+            self.dt_now = self.dt_now - datetime.timedelta(minutes=t_delta)
+
+        self.last_update = self.dt_now.strftime("%Y-%m-%d %H:%M")
+
         self.con = MySQLdb.connect(user=user, passwd=passwd, host=host, db=db)    #mysqlに接続
         self.cursor = self.con.cursor()
         
         self.data = video_data
-        self.last_update = last_update
 
         #各月ごとに動画再生数を記録するテーブルを作成する
-        self.dt_now = datetime.datetime.now()
         self.current_tbl = self.dt_now.strftime("%Y%m")    #例:202202
 
         self.current_tbl = str(self.current_tbl) + "_views"    #今月の再生数テーブル名 例:2022_views
@@ -188,7 +181,7 @@ class selenium_to_mysql:    #mysqlのデータベースに保存
             title = row["title"]
             if not title.find("'") == -1:    #シングルクオーテーション(')を含む場合は-1以外を返す
                 title = title.replace("'", "\\'")
-            view_count = row[str(self.last_update)]
+            view_count = row["view_count"]
 
             print(video_id, title)
 
@@ -209,7 +202,7 @@ class selenium_to_mysql:    #mysqlのデータベースに保存
 
         for index, row in self.data.iterrows():
             video_id = row["video_id"] 
-            view_count = row[str(self.last_update)]
+            view_count = row["view_count"]
 
             self.cursor.execute(f"update {self.current_tbl} set `{self.last_update}`= {view_count} where video_id='{video_id}'")
             #video_statsの更新
@@ -225,18 +218,17 @@ if __name__ == "__main__":
     ch_list_path = "ch_list.json"
     ch_list = open_json(ch_list_path)
 
-    ch_name = list(ch_list.keys())[0]
-    ch_url = list(ch_list.values())[0]
+    ch_name = list(ch_list.keys())[8]
+    ch_url = list(ch_list.values())[8]
 
     print(ch_url, ch_name)
 
-    youtube_ch = get_video_info(ch_url, ch_name, video_stats, dt_now)
+    youtube_ch = get_video_info(ch_url, ch_name)
     youtube_ch.web_scroll()
     video_data = youtube_ch.extract_info(views_flag = True)
-    last_update = youtube_ch.dt_now
     youtube_ch.save()
 
-    mysql = selenium_to_mysql(video_data=video_data, last_update=last_update, create_trigger_flag=True)
+    mysql = selenium_to_mysql(video_data=video_data, create_trigger_flag=True)
     mysql.add_data()
     mysql.update_views()
     mysql.close()
