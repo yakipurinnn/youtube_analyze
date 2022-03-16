@@ -11,6 +11,7 @@
 from msilib.schema import tables
 import MySQLdb
 from MySQLdb._exceptions import IntegrityError
+from MySQLdb._exceptions import OperationalError
 import time
 import datetime
 from dateutil.relativedelta import relativedelta
@@ -25,7 +26,6 @@ import json
 
 
 def open_json(path):
-    #keyを複数保存する
     json_data = open(path,"r", encoding="utf8")
     json_data = json.load(json_data)
 
@@ -83,6 +83,8 @@ class get_video_info:
             href = info.get_attribute("href")    #URL
 
             video_id = href.replace("https://www.youtube.com/watch?v=", "")     #video id
+            video_id = video_id.replace("https://www.youtube.com/shorts/", "")
+            print(i, video_id)
 
             if not views_flag:    #動画再生は抽出しない場合(APIに任せる場合)
                 video_data = pd.DataFrame(data=[[title, href, self.ch_name, self.ch_url, video_id]], columns=["title", "href", "ch_name", "ch_url", "video_id"])
@@ -90,6 +92,8 @@ class get_video_info:
 
             elif views_flag:    #動画再生回数も抽出する場合
                 aria_label = info.get_attribute("aria-label")    #その他情報
+                aria_label = aria_label.replace(" - ショート動画を再生", "")    #ショート動画の場合
+                print(aria_label)
 
                 for j in range(15):    #aria_labelから再生回数を抽出
                     num = aria_label[len(aria_label)-5-j]
@@ -190,14 +194,14 @@ class selenium_to_mysql:    #mysqlのデータベースに保存
                                     (video_id, ch_name, title, last_update, view_count) 
                                     values ('{video_id}', '{ch_name}', '{title}', '{self.last_update}', {view_count})""")
             except IntegrityError as e:
-                print(index, "既にデータベースに追加されている動画です")
+                print(index, e, "既にデータベースに追加されている動画です")
         self.con.commit()
 
     def update_views(self):    #動画再生回数の記録とvideo_statsの更新
         #viewsテーブルへの記録
         try:
             self.cursor.execute(f"alter table {self.current_tbl} add `{self.last_update}` int")    #数字のみのカラム名は作成できないため``で囲む
-        except Exception as e:
+        except OperationalError as e:
             print(type(e), e, "既に生成済のカラムです")
 
         for index, row in self.data.iterrows():
@@ -218,8 +222,8 @@ if __name__ == "__main__":
     ch_list_path = "ch_list.json"
     ch_list = open_json(ch_list_path)
 
-    ch_name = list(ch_list.keys())[8]
-    ch_url = list(ch_list.values())[8]
+    ch_name = list(ch_list.keys())[29]
+    ch_url = list(ch_list.values())[29]
 
     print(ch_url, ch_name)
 
