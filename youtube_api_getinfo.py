@@ -23,7 +23,10 @@ from apiclient.errors import HttpError
 import json
 
 
-def pickle_load_list():    #pickleで保存したvideo_idのリストを返す
+def pickle_load_list():
+    """
+    pickeleで保存したpandasデータを開き、video_idのリストを返す
+    """
     with open("データ/video_stats.pkl", "rb") as f:
         video_id = pickle.load(f)
         video_id = list(video_id["video_id"])
@@ -31,16 +34,21 @@ def pickle_load_list():    #pickleで保存したvideo_idのリストを返す
         return video_id
 
 def pickle_load():    #pandasで保存したdata_frameを返す
+    """
+    pandasで保存したデータをdata frame形式で返す
+    """
     with open("データ/video_stats.pkl", "rb") as f:
         video_data = pickle.load(f)
 
         return video_data
 
-
-key_list_path = "key_list.json"
-key_list = open_json(key_list_path)
-
 class ytd_api:
+    """
+    youtube apiを利用し、動画のデータを取得する。
+    以下メソッドについて、extract_infoは動画の詳細情報を取得する。
+    serch_new_videoは指定したチャンネルの新たな動画を検索する。
+    saveはpickele形式で取得したデータを保存する。
+    """
     def __init__(self, api_key_list):
         self.video_stats = pd.DataFrame(columns=["video_id", "ch_name", "ch_url", "title", "published_date", \
                                                     "private_flag", "comment_count", "like_count", "view_count"])
@@ -54,11 +62,19 @@ class ytd_api:
         self.youtube = build("youtube", "v3", developerKey=self.ytd_apikey)
 
     def next_key(self):
+        """
+        youtube api keyのリストから次のキーを呼びだす
+        """
         self.ytd_apikey = next(self.api_key_list)
         self.key_number = next(self.key_number_list )
         self.youtube = build("youtube", "v3", developerKey=self.ytd_apikey)
 
     def extract_info(self, id_list):
+        """
+        youtube api を利用して各動画の詳細なデータを取得する。
+        返り値はpandas.dataframeの形式
+        引数には調べたい動画のIDのリストを渡す
+        """
         for i, id in enumerate(id_list):
             break_flag = False
             for j in range(30):
@@ -127,8 +143,11 @@ class ytd_api:
         return self.video_stats
 
     def serch_new_video(self, ch_list, current_id_list=[]):
-        #ch_listからAPIを利用して更新された動画のvideo_idリストを返す ch_listは調べたいchのリスト
-        #current_id_listはデータベースに登録されているvideo_idのリストfetch_video_idでとってきたもの
+        """ 
+        ch_listからAPIを利用して更新された新たな動画のvideo_idリストを返す。
+        引数ch_listは調べたいchのリスト\{チャンネル名: URL\}の形式のjsonリスト。
+        current_id_listはデータベースに登録されているvideo_idのリスト。fetch_video_idでとってきたもの
+        """
         new_id_list = []
         break_flag = False
 
@@ -198,9 +217,13 @@ class ytd_api:
         return self.video_stats
 
     def save(self):
+        """
+        取得したpandas.dataframeをpickle形式で保存する
+        """
         f = open("./データ/video_stats.pkl", "wb")
         pickle.dump(self.video_stats, f)
         print(self.video_stats)
+
 
 class api_to_mysql(selenium_to_mysql):
     def __init__(self, dt_now=datetime.datetime.now(), video_data=None, user="root", passwd="Takanori6157", host="localhost", db="holo_analyze"):
@@ -284,7 +307,7 @@ class api_to_mysql(selenium_to_mysql):
         print("直近" + str(days_ago) + "日間の動画は" + str(len(rows)) + "件です")
         return rows
 
-    def assign_published_index(self):
+    def assign_published_index(self):    #投稿日時順にindexを振る
         self.cursor.execute("""update 
                             video_stats as t1, 
                             (SELECT video_id, row_number() over(order by published_date, video_id) dt from video_stats) as t2
@@ -294,13 +317,15 @@ class api_to_mysql(selenium_to_mysql):
 
 
 if __name__ == "__main__":
+    key_list_path = "key_list.json"
+    key_list = open_json(key_list_path)
+
+    ch_list_path = "ch_list.json"
+    ch_list = open_json(ch_list_path)
 
     mysql = api_to_mysql()
 
     current_id_list = mysql.fetch_video_id()
-    
-    ch_list_path = "ch_list.json"
-    ch_list = open_json(ch_list_path)
 
     youtube = ytd_api(key_list)
     video_data = youtube.serch_new_video(ch_list, current_id_list)
