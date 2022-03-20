@@ -23,7 +23,7 @@ from apiclient.errors import HttpError
 import json
 
 
-def pickle_load_list():
+def pickle_load_id():
     """
     pickeleで保存したpandasデータを開き、video_idのリストを返す
     """
@@ -50,8 +50,10 @@ class ytd_api:
     saveはpickele形式で取得したデータを保存する。
     """
     def __init__(self, api_key_list):
-        self.video_stats = pd.DataFrame(columns=["video_id", "ch_name", "ch_url", "title", "published_date", \
+        self.video_stats = pd.DataFrame(columns=["video_id", "ch_name", "ch_url", "title", "published_date", "thumbnail_url"\
                                                     "private_flag", "comment_count", "like_count", "view_count"])
+        
+        self.ch_stats = pd.DataFrame(columns=["video_id", "ch_name", "ch_url", "title", "published_date", "thumbnail_url", "private_flag", "comment_count", "like_count", "view_count"])
         
         self.api_key_list = iter(api_key_list.keys())
         self.key_number_list = iter(api_key_list.values())
@@ -61,13 +63,20 @@ class ytd_api:
 
         self.youtube = build("youtube", "v3", developerKey=self.ytd_apikey)
 
-    def next_key(self):
+    def next_key(self, break_flag):
         """
         youtube api keyのリストから次のキーを呼びだす
         """
-        self.ytd_apikey = next(self.api_key_list)
-        self.key_number = next(self.key_number_list )
-        self.youtube = build("youtube", "v3", developerKey=self.ytd_apikey)
+        break_flag = break_flag
+        try:
+            self.ytd_apikey = next(self.api_key_list)
+            self.key_number = next(self.key_number_list )
+            self.youtube = build("youtube", "v3", developerKey=self.ytd_apikey)
+        except StopIteration as e :
+            print(type(e), "APIクオートが上限に達しました。youtube_APIを終了します")
+            break_flag = True
+        
+        return break_flag
 
     def extract_info(self, id_list):
         """
@@ -83,11 +92,8 @@ class ytd_api:
                     break
                 except HttpError as e :
                     print(type(e), "APIクオートが上限に達しました。次のキーを使用します。", "next_key_number: ", 1 + int(self.key_number))
-                    try:
-                        self.next_key()
-                    except StopIteration as e :
-                        print(type(e), "APIクオートが上限に達しました。youtube_APIを終了します")
-                        break_flag = True
+                    break_flag = self.next_key(break_flag)
+                    if break_flag:
                         break
             if break_flag:
                 break
@@ -110,6 +116,8 @@ class ytd_api:
                 published_date += datetime.timedelta(hours=9)
                 published_date = published_date.replace(tzinfo=None)
 
+                thumbnail_url = res["items"][0]["snippet"]["thumbnails"]["medium"]["url"]    #動画サムネイルのURL
+
                 private_flag = 0
 
                 try:
@@ -131,11 +139,12 @@ class ytd_api:
                     like_count = 0
                     print(i, id, "高評価数が非公開です")
 
-                video_data = pd.DataFrame(data=[[id, ch_name, ch_url, title, published_date, private_flag, like_count, comment_count, view_count]], 
-                                            columns=["video_id", "ch_name", "ch_url", "title", "published_date", "private_flag", "like_count", \
+                video_data = pd.DataFrame(data=[[id, ch_name, ch_url, title, published_date, thumbnail_url, private_flag, like_count, comment_count, view_count]], 
+                                            columns=["video_id", "ch_name", "ch_url", "title", "published_date", "thumbnail_url", "private_flag", "like_count", \
                                                 "comment_count", "view_count"])
                 self.video_stats = pd.concat([self.video_stats, video_data], ignore_index=True)
                 print("key_number:", self.key_number, i, id, published_date, view_count)
+
                 if i == 0:
                     self.video_stats = self.video_stats.astype({"title": "str", "like_count": "int", "view_count": "int"})  #int型に指定         
 
@@ -146,7 +155,7 @@ class ytd_api:
         """ 
         ch_listからAPIを利用して更新された新たな動画のvideo_idリストを返す。
         引数ch_listは調べたいchのリスト\{チャンネル名: URL\}の形式のjsonリスト。
-        current_id_listはデータベースに登録されているvideo_idのリスト。fetch_video_idでとってきたもの
+        current_id_listはデータベースに登録されているvideo_idのリスト。基本的にfetch_video_idでとってきたもの
         """
         new_id_list = []
         break_flag = False
@@ -180,11 +189,8 @@ class ytd_api:
                         break
                     except HttpError as e :
                         print(type(e), "APIクオートが上限に達しました。次のキーを使用します。", "next_key_number: ", 1 + int(self.key_number))
-                        try:
-                            self.next_key()
-                        except StopIteration as e:
-                            print(type(e), "APIクオートが上限に達しました。youtube_APIを終了します")
-                            break_flag = True
+                        break_flag =self.next_key(break_flag)
+                        if break_flag:
                             break
 
                 if new_videos.get("items") == []:   #動画がAPIが返さない場合は検索を終了
@@ -215,6 +221,10 @@ class ytd_api:
 
         self.extract_info(new_id_list)
         return self.video_stats
+
+    def extract_ch_info(self, ch_list):
+
+        pass
 
     def save(self):
         """
@@ -258,6 +268,7 @@ class api_to_mysql(selenium_to_mysql):
 
             published_date = row["published_date"]
             last_update = self.last_update
+            thumbnail_url = row["thumbnail_url"]
             like_count = row["like_count"]
             comment_count = row["comment_count"]
             view_count = row["view_count"]
@@ -273,6 +284,7 @@ class api_to_mysql(selenium_to_mysql):
                                 title = '{title}',
                                 published_date = '{published_date}',
                                 last_update = '{last_update}',
+                                thumbnail_url = '{thumbnail_url}',
                                 private_flag = '{private_flag}',
                                 like_count = {like_count},
                                 comment_count = {comment_count} 
@@ -285,6 +297,15 @@ class api_to_mysql(selenium_to_mysql):
 
         self.con.commit()
 
+    def get_thumbnail(self):
+        for index, row in self.data.iterrows():
+            video_id = str(row["video_id"])
+            ch_name = row["ch_name"]
+            pass
+
+    def update_ch_info(self):
+        pass
+
     def fetch_video_id(self):    #video_idのリストを返す
         self.cursor.execute("select video_id from video_stats")
         rows = self.cursor.fetchall()
@@ -293,7 +314,10 @@ class api_to_mysql(selenium_to_mysql):
 
         return rows
 
-    def fetch_latest_video(self, days_ago=30):     #days_agoに日数と指定してデータベースから直近 N 日の video_id を検索し、リストで返す
+    def fetch_latest_video(self, days_ago=30):
+        """
+        days_agoに日数を指定してデータベースから直近 N 日の video_id を検索し、リストで返す
+        """
         dt_now=datetime.datetime.now()
         dt_delta = datetime.timedelta(days=days_ago)
         dt_now -= dt_delta
@@ -317,6 +341,7 @@ class api_to_mysql(selenium_to_mysql):
 
 
 if __name__ == "__main__":
+
     key_list_path = "key_list.json"
     key_list = open_json(key_list_path)
 
@@ -329,7 +354,7 @@ if __name__ == "__main__":
 
     youtube = ytd_api(key_list)
     video_data = youtube.serch_new_video(ch_list, current_id_list)
-    video_data = youtube.extract_info(current_id_list)
+    #video_data = youtube.extract_info(current_id_list)
     youtube.save()
 
     mysql = api_to_mysql(video_data = video_data)
@@ -337,19 +362,13 @@ if __name__ == "__main__":
     mysql.assign_published_index()
     mysql.close()
 
-
-    #lists = pickle_load_list()
-
-    #video_data = pickle_load()    #selenium_to mysqlでvideo_idをpickleで保存した場合
-
     """
-    youtube = ytd_api(key_list)
-
     video_data = pickle_load()    #selenium_to mysqlでvideo_idをpickleで保存した場合
-    print(video_data["video_id"])
+
     mysql = api_to_mysql(video_data = video_data)
     mysql.api_update()
     mysql.assign_published_index()
     mysql.close()
     """
+
 
