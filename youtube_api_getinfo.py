@@ -78,6 +78,13 @@ class ytd_api:
         
         return break_flag
 
+    def get_ch_id(self, ch_url):
+        pattern = re.compile(r'https://www.youtube.com/|channel/|/videos')
+        ch_id = pattern.split(ch_url)
+        ch_id = ch_id[2]    #ch_urlからch_idを取得
+
+        return ch_id
+
     def extract_info(self, id_list):
         """
         youtube api を利用して各動画の詳細なデータを取得する。
@@ -161,10 +168,7 @@ class ytd_api:
         break_flag = False
 
         for ch_url in ch_list.values():
-            pattern = re.compile(r'https://www.youtube.com/|channel/|/videos')
-
-            ch_id = pattern.split(ch_url)
-            ch_id = ch_id[2]    #ch_urlからch_idを取得
+            ch_id = self.get_ch_id(ch_url)
 
             st_dt = None
             ed_dt = None
@@ -189,7 +193,7 @@ class ytd_api:
                         break
                     except HttpError as e :
                         print(type(e), "APIクオートが上限に達しました。次のキーを使用します。", "next_key_number: ", 1 + int(self.key_number))
-                        break_flag =self.next_key(break_flag)
+                        break_flag = self.next_key(break_flag)
                         if break_flag:
                             break
 
@@ -223,7 +227,11 @@ class ytd_api:
         return self.video_stats
 
     def extract_ch_info(self, ch_list):
+        for ch_url in ch_list.values():
+            pattern = re.compile(r'https://www.youtube.com/|channel/|/videos')
 
+            ch_id = pattern.split(ch_url)
+            ch_id = ch_id[2]    #ch_urlからch_idを取得
         pass
 
     def save(self):
