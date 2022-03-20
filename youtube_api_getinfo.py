@@ -63,11 +63,15 @@ class ytd_api:
 
         self.youtube = build("youtube", "v3", developerKey=self.ytd_apikey)
 
-    def next_key(self, break_flag):
+    def next_key(self, e, break_flag=False):
         """
         youtube api keyのリストから次のキーを呼びだす
+        引数についてbreak_flagは基本的にFalse
+        eはerror class
         """
         break_flag = break_flag
+        print(type(e), "APIクオートが上限に達しました。次のキーを使用します。", "next_key_number: ", 1 + int(self.key_number))
+
         try:
             self.ytd_apikey = next(self.api_key_list)
             self.key_number = next(self.key_number_list )
@@ -98,8 +102,7 @@ class ytd_api:
                     res = self.youtube.videos().list(part='snippet,statistics', id = id).execute()
                     break
                 except HttpError as e :
-                    print(type(e), "APIクオートが上限に達しました。次のキーを使用します。", "next_key_number: ", 1 + int(self.key_number))
-                    break_flag = self.next_key(break_flag)
+                    break_flag = self.next_key(e, break_flag)
                     if break_flag:
                         break
             if break_flag:
@@ -192,8 +195,7 @@ class ytd_api:
                         #channelIdに指定したチャンネルから最新の動画50件を取得
                         break
                     except HttpError as e :
-                        print(type(e), "APIクオートが上限に達しました。次のキーを使用します。", "next_key_number: ", 1 + int(self.key_number))
-                        break_flag = self.next_key(break_flag)
+                        break_flag = self.next_key(e, break_flag)
                         if break_flag:
                             break
 
@@ -227,12 +229,15 @@ class ytd_api:
         return self.video_stats
 
     def extract_ch_info(self, ch_list):
+        break_flag = False
         for ch_url in ch_list.values():
-            pattern = re.compile(r'https://www.youtube.com/|channel/|/videos')
+            ch_id = self.get_ch_id(ch_url)
+        for i in range(30):
+            try:
+                pass
+            except HttpError as e :
+                pass
 
-            ch_id = pattern.split(ch_url)
-            ch_id = ch_id[2]    #ch_urlからch_idを取得
-        pass
 
     def save(self):
         """
