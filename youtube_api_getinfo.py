@@ -234,10 +234,10 @@ class ytd_api:
         引数ch_listは\{チャンネル名: チャンネルの動画欄URL\}のjsonファイル
         """
         break_flag = False
-        for ch_url in ch_list.values():
+        for i, ch_url in enumerate(ch_list.values()):
             ch_id = self.get_ch_id(ch_url)
 
-            for i in range(30):
+            for j in range(30):
                 try:
                     res = self.youtube.channels().list(part='snippet,statistics,brandingSettings', id = ch_id).execute()
                 except HttpError as e :
@@ -284,8 +284,9 @@ class ytd_api:
 
 
 class api_to_mysql(selenium_to_mysql):
-    def __init__(self, dt_now=datetime.datetime.now(), video_data=None, user="root", passwd="Takanori6157", host="localhost", db="holo_analyze"):
+    def __init__(self, dt_now=datetime.datetime.now(), video_data=None, ch_data=None, user="root", passwd="Takanori6157", host="localhost", db="holo_analyze"):
         super().__init__(dt_now=dt_now, video_data=video_data, user=user, passwd=passwd, host=host, db=db)
+        self.ch_data = ch_data
 
     def api_update(self):
         try:
@@ -308,7 +309,6 @@ class api_to_mysql(selenium_to_mysql):
                                     (video_id) values ('{video_id}')""")
 
             ch_name = row["ch_name"]
-            ch_url = row["ch_url"]
 
             title = row["title"]    #titleのエスケープ処理
             if not title.find("'") == -1:    #シングルクオーテーション(')を含む場合は-1以外を返す
@@ -336,31 +336,74 @@ class api_to_mysql(selenium_to_mysql):
                                 private_flag = '{private_flag}',
                                 like_count = {like_count},
                                 comment_count = {comment_count} 
-                                where video_id='{video_id}'""")
+                                where video_id = '{video_id}'""")
 
-            #ch_infoの更新
-            self.cursor.execute(f"update ch_info set ch_name = '{ch_name}' where ch_url ='{ch_url}'")
             #viewsの更新
             self.cursor.execute(f"update {self.current_tbl} set `{self.last_update}`= {view_count} where video_id='{video_id}'")
 
         self.con.commit()
 
-    def get_thumbnail(self):
-        for index, row in self.data.iterrows():
-            video_id = str(row["video_id"])
-            ch_name = row["ch_name"]
-            pass
+    def api_ch_update(self):
+        ch_list = self.fetch_ch_id()
 
-    def update_ch_info(self):
-        pass
+        for index, row in self.ch_data.iterrows():
+            deleted_flag = row["deleted_flag"]
+            ch_id = str(row["ch_id"])
+
+            if deleted_flag == 1:
+                self.cursor.execute(f"update ch_stats set deleted_flag = '{deleted_flag}' where video_id='{ch_id}'")
+                continue
+            
+            if not ch_id in ch_list:    #ch_idがまだデータベースに登録されていない場合
+                self.cursor.execute(f"""insert into ch_stats 
+                                    (ch_id) values ('{ch_id}')""")
+
+            ch_name = row["ch_name"]
+            published_date = row["published_date"]
+            last_update = self.last_update
+            thumbnail_url = row["thumbnail_url"]
+            subscriber_count = row["subscriber_count"]
+            video_count = row["video_count"]
+            view_count = row["view_count"]
+
+            print(index, ch_id, ch_name)
+            self.cursor.execute(f"""update ch_stats set
+                                ch_name = '{ch_name}',
+                                published_date = '{published_date}',
+                                last_update = '{last_update}',
+                                thumbnail_url = '{thumbnail_url}',
+                                deleted_flag = '{deleted_flag}',
+                                subscriber_count = {subscriber_count},
+                                video_count = {video_count},
+                                view_count = {view_count} 
+                                where ch_id='{ch_id}'""")
+
+        self.con.commit()
+
 
     def fetch_video_id(self):    #video_idのリストを返す
         self.cursor.execute("select video_id from video_stats")
         rows = self.cursor.fetchall()
         rows = pd.DataFrame(rows)
-        rows = list(rows[:][0])
+        try:    #データベースが空の場合の回避
+            rows = list(rows[:][0])
+        except KeyError as e:
+            rows = []
 
         return rows
+
+
+    def fetch_ch_id(self):    #ch_idのリストを返す
+        self.cursor.execute("select ch_id from ch_stats")
+        rows = self.cursor.fetchall()
+        rows = pd.DataFrame(rows)
+        try:
+            rows = list(rows[:][0])
+        except KeyError as e:
+            rows = []
+
+        return rows
+
 
     def fetch_latest_video(self, days_ago=30):
         """
@@ -401,19 +444,16 @@ if __name__ == "__main__":
     current_id_list = mysql.fetch_video_id()
 
     youtube = ytd_api(key_list)
-    #video_data = youtube.serch_new_video(ch_list, current_id_list)
-    #video_data = youtube.extract_info(current_id_list)
+    video_data = youtube.serch_new_video(ch_list, current_id_list)
+    video_data = youtube.extract_info(current_id_list)
     ch_data = youtube.extract_ch_info(ch_list)
     youtube.save()
 
-    print(ch_data)
-
-    """
-    mysql = api_to_mysql(video_data = video_data)
+    mysql = api_to_mysql(video_data = video_data, ch_data=ch_data)
     mysql.api_update()
+    mysql.api_ch_update()
     mysql.assign_published_index()
     mysql.close()
-    """
 
     """
     video_data = pickle_load()    #selenium_to mysqlでvideo_idをpickleで保存した場合
