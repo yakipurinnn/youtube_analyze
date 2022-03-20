@@ -53,7 +53,7 @@ class ytd_api:
         self.video_stats = pd.DataFrame(columns=["video_id", "ch_name", "ch_url", "title", "published_date", "thumbnail_url"\
                                                     "private_flag", "comment_count", "like_count", "view_count"])
         
-        self.ch_stats = pd.DataFrame(columns=["video_id", "ch_name", "ch_url", "title", "published_date", "thumbnail_url", "private_flag", "comment_count", "like_count", "view_count"])
+        self.ch_stats = pd.DataFrame(columns=["ch_id", "ch_name", "published_date", "thumbnail_url", "deleted_flag", "subscriber_count", "video_count", "view_count"])
         
         self.api_key_list = iter(api_key_list.keys())
         self.key_number_list = iter(api_key_list.values())
@@ -113,7 +113,7 @@ class ytd_api:
                 video_data = pd.DataFrame(data=[[id, private_flag]], columns=["video_id", "private_flag"])
                 self.video_stats = pd.concat([self.video_stats, video_data], ignore_index=True)
 
-                print("動画が非公開の可能性があります")
+                print(id, "動画が非公開の可能性があります")
 
             else:
                 ch_name = res["items"][0]["snippet"]["channelTitle"]
@@ -229,15 +229,50 @@ class ytd_api:
         return self.video_stats
 
     def extract_ch_info(self, ch_list):
+        """
+        youtubeチャンネルの情報を取得する
+        引数ch_listは\{チャンネル名: チャンネルの動画欄URL\}のjsonファイル
+        """
         break_flag = False
         for ch_url in ch_list.values():
             ch_id = self.get_ch_id(ch_url)
-        for i in range(30):
-            try:
-                pass
-            except HttpError as e :
-                pass
 
+            for i in range(30):
+                try:
+                    res = self.youtube.channels().list(part='snippet,statistics,brandingSettings', id = ch_id).execute()
+                except HttpError as e :
+                    break_flag = self.next_key(e, break_flag)
+                    if break_flag:
+                        break
+                if break_flag:
+                    break
+
+            deleted_flag = 0
+            try:    #チャンネルが削除された場合
+                res["items"]
+            except KeyError as e:
+                deleted_flag = 1
+                print(ch_id, "チャンネルが削除された可能性があります")
+                continue
+
+            ch_name  = res["items"][0]["snippet"]["title"]
+            published_date = res["items"][0]["snippet"]["publishedAt"]
+            thumbnail_url = res["items"][0]["snippet"]["thumbnails"]["medium"]["url"]
+
+            hidden_subscriber_count = res["items"][0]["statistics"]["hiddenSubscriberCount"]
+
+            if not hidden_subscriber_count:    #hidden_subscriber_countは登録者数非公開の場合はTrueを返す
+                subscriber_count = res["items"][0]["statistics"]["subscriberCount"]
+
+            video_count = res["items"][0]["statistics"]["videoCount"]
+            view_count = res["items"][0]["statistics"]["viewCount"]
+
+            ch_data = pd.DataFrame(data=[[ch_id, ch_name, published_date, thumbnail_url, deleted_flag, subscriber_count, video_count, view_count]], 
+                                            columns=["ch_id", "ch_name", "published_date", "thumbnail_url", "deleted_flag", "subscriber_count", "video_count", "view_count"])
+            self.ch_stats = pd.concat([self.ch_stats, ch_data], ignore_index=True)
+            print("key_number:", self.key_number, i, ch_id, view_count)
+
+        return self.ch_stats
 
     def save(self):
         """
@@ -366,14 +401,19 @@ if __name__ == "__main__":
     current_id_list = mysql.fetch_video_id()
 
     youtube = ytd_api(key_list)
-    video_data = youtube.serch_new_video(ch_list, current_id_list)
+    #video_data = youtube.serch_new_video(ch_list, current_id_list)
     #video_data = youtube.extract_info(current_id_list)
+    ch_data = youtube.extract_ch_info(ch_list)
     youtube.save()
 
+    print(ch_data)
+
+    """
     mysql = api_to_mysql(video_data = video_data)
     mysql.api_update()
     mysql.assign_published_index()
     mysql.close()
+    """
 
     """
     video_data = pickle_load()    #selenium_to mysqlでvideo_idをpickleで保存した場合
