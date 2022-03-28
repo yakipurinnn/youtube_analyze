@@ -5,22 +5,23 @@
 #日時計算など: https://note.nkmk.me/python-datetime-pytz-timezone/
 #youtube api 500件以上取得できなくなる問題について: https://zenn.dev/jqinglong/articles/1161615fdaa6f6
 
+import pandas as pd
+import numpy as np
+import os
+import pickle
+import re
+import MySQLdb
+import datetime
+import urllib.request
 from logging import exception
 from multiprocessing.reduction import duplicate
 from MySQLdb._exceptions import OperationalError
-import pickle
-import re
-import datetime
 from dateutil.relativedelta import relativedelta
 from urllib.error import HTTPError
-import pandas as pd
-import numpy as np
 from youtube_sql2 import selenium_to_mysql
 from youtube_sql2 import open_json
-#pd.set_option("display.max_rows", None)
 from apiclient.discovery import build
 from apiclient.errors import HttpError
-import json
 
 
 def pickle_load_id():
@@ -51,7 +52,7 @@ class ytd_api:
     """
     def __init__(self, api_key_list):
         self.video_stats = pd.DataFrame(columns=["video_id", "ch_name", "ch_url", "title", "published_date", "thumbnail_url"\
-                                                    "private_flag", "comment_count", "like_count", "view_count"])
+                                                    "private_flag", "membership_flag", "comment_flag", "likecount_flag", "comment_count", "like_count", "view_count"])
         
         self.ch_stats = pd.DataFrame(columns=["ch_id", "ch_name", "published_date", "thumbnail_url", "deleted_flag", "subscriber_count", "video_count", "view_count"])
         
@@ -63,7 +64,7 @@ class ytd_api:
 
         self.youtube = build("youtube", "v3", developerKey=self.ytd_apikey)
 
-    def next_key(self, e, break_flag=False):
+    def next_key(self, e, break_flag=False):    #再帰関数使った方がきれい(未実装)
         """
         youtube api keyのリストから次のキーを呼びだす
         引数についてbreak_flagは基本的にFalse
@@ -128,30 +129,38 @@ class ytd_api:
 
                 thumbnail_url = res["items"][0]["snippet"]["thumbnails"]["medium"]["url"]    #動画サムネイルのURL
 
-                private_flag = 0
-
-                try:
-                    comment_count = res["items"][0]["statistics"]["commentCount"]
-                except KeyError as e:
-                    comment_count = 0
-                    print(i, id, "コメント欄が非公開です")
+                private_flag = 0    #private_flagについて 0: 通常 1: 非公開または削除 2: メンバー限定公開 (再生数確認できない) 3: 評価数非公開 4: コメント欄非公開
+                memmbership_flag = 0
+                comment_flag = 0
+                likecount_flag = 0
 
                 try:
                     view_count = int(res["items"][0]["statistics"]["viewCount"])
                 except KeyError as e:
                     print(i, id, "メンバーシップ限定公開の可能性があります")
-                    private_flag = 2
+                    memmbership_flag = 1
                     view_count = 0
 
                 try:
                     like_count = int(res["items"][0]["statistics"]["likeCount"])
                 except KeyError as e:
                     like_count = 0
+                    likecount_flag = 1
                     print(i, id, "高評価数が非公開です")
 
-                video_data = pd.DataFrame(data=[[id, ch_name, ch_url, title, published_date, thumbnail_url, private_flag, like_count, comment_count, view_count]], 
-                                            columns=["video_id", "ch_name", "ch_url", "title", "published_date", "thumbnail_url", "private_flag", "like_count", \
-                                                "comment_count", "view_count"])
+                try:
+                    comment_count = res["items"][0]["statistics"]["commentCount"]
+                except KeyError as e:
+                    comment_count = 0
+                    comment_flag = 1
+                    print(i, id, "コメント欄が非公開です")
+
+                video_data = pd.DataFrame(data=[[id, ch_name, ch_url, title, published_date,\
+                                                thumbnail_url, private_flag, memmbership_flag, comment_flag, likecount_flag,\
+                                                like_count, comment_count, view_count]], 
+                                            columns=["video_id", "ch_name", "ch_url", "title", "published_date",\
+                                                "thumbnail_url", "private_flag", "membership_flag", "comment_flag", "likecount_flag",\
+                                                    "like_count", "comment_count", "view_count"])
                 self.video_stats = pd.concat([self.video_stats, video_data], ignore_index=True)
                 print("key_number:", self.key_number, i, id, published_date, view_count)
 
@@ -220,7 +229,7 @@ class ytd_api:
 
                         elif video_id in current_id_list:
                             duplicate_flag = True
-                            print("新規動画の検索を終了します")
+                            print(ch_id, "新規動画の検索を終了します")
                             break
 
         print("新たな動画は"+ str(len(new_id_list)) + "件でした")
@@ -298,10 +307,17 @@ class api_to_mysql(selenium_to_mysql):
 
         for index, row in self.data.iterrows():
             private_flag = row["private_flag"]
+            membership_flag = row["membership_flag"]
+            comment_flag = row["comment_flag"]
+            likecount_flag = row["likecount_flag"]
             video_id = str(row["video_id"])
+            last_update = self.last_update
 
-            if private_flag == 1:
-                self.cursor.execute(f"update video_stats set private_flag = '{private_flag}' where video_id='{video_id}'")
+            if private_flag == 1:    #非公開の場合
+                self.cursor.execute(f"""update video_stats set
+                                    private_flag = '{private_flag}', 
+                                    last_update = '{last_update}'
+                                    where video_id = '{video_id}'""")
                 continue
 
             if not video_id in id_list:    #video_idがまだデータベースにない場合
@@ -315,7 +331,6 @@ class api_to_mysql(selenium_to_mysql):
                 title = title.replace("'", "\\'")
 
             published_date = row["published_date"]
-            last_update = self.last_update
             thumbnail_url = row["thumbnail_url"]
             like_count = row["like_count"]
             comment_count = row["comment_count"]
@@ -323,9 +338,20 @@ class api_to_mysql(selenium_to_mysql):
 
             #video_statsの更新
             print(index, video_id, title)
-            if private_flag == 0:
+            if membership_flag == 0:    #メンバーシップ限定公開
                 self.cursor.execute(f"""update video_stats set
-                                    view_count = {view_count} where video_id='{video_id}'""")
+                                    view_count = {view_count}
+                                    where video_id='{video_id}'""")
+
+            if comment_flag == 0:    #コメント欄非公開
+                self.cursor.execute(f"""update video_stats set
+                                    comment_count = {comment_count}
+                                    where video_id='{video_id}'""")
+
+            if likecount_flag == 0:    #評価数非公開
+                self.cursor.execute(f"""update video_stats set
+                                    like_count = {like_count}
+                                    where video_id='{video_id}'""")
 
             self.cursor.execute(f"""update video_stats set
                                 ch_name = '{ch_name}',
@@ -334,14 +360,15 @@ class api_to_mysql(selenium_to_mysql):
                                 last_update = '{last_update}',
                                 thumbnail_url = '{thumbnail_url}',
                                 private_flag = '{private_flag}',
-                                like_count = {like_count},
-                                comment_count = {comment_count} 
+                                membership_flag = '{membership_flag}',
+                                comment_flag = '{comment_flag}',
+                                likecount_flag = '{likecount_flag}'
                                 where video_id = '{video_id}'""")
 
             #viewsの更新
             self.cursor.execute(f"update {self.current_tbl} set `{self.last_update}`= {view_count} where video_id='{video_id}'")
 
-        self.con.commit()
+        self.conn.commit()
 
     def api_ch_update(self):
         ch_list = self.fetch_ch_id()
@@ -378,7 +405,7 @@ class api_to_mysql(selenium_to_mysql):
                                 view_count = {view_count} 
                                 where ch_id='{ch_id}'""")
 
-        self.con.commit()
+        self.conn.commit()
 
 
     def fetch_video_id(self):    #video_idのリストを返す
@@ -428,7 +455,29 @@ class api_to_mysql(selenium_to_mysql):
                             (SELECT video_id, row_number() over(order by published_date, video_id) dt from video_stats) as t2
                             set t1.published_index = t2.dt
                             where t1.video_id = t2.video_id""")
-        self.con.commit()
+        self.conn.commit()
+
+class save_thumbnail:
+    def __init__(self, video_id_list, user="root", passwd="Takanori6157", host="localhost", db="holo_analyze"):
+        self.conn = MySQLdb.connect(user=user, passwd=passwd, host=host, db=db)    #mysqlに接続
+        self.cursor = self.conn.cursor()
+        self.video_data = video_id_list
+
+    def save_video_thumbnail(self, thumbnail_url_list):
+        for i, row in self.video_data.iterrows():
+            video_id = row["video_id"]
+            thumbnail_url = row["thumbnail_url"]
+            ch_name = row["ch_name"]
+
+            self.cursor.execute(f"select ch_id from ch_stats where ch_name = '{ch_name}'")
+            ch_id = self.cursor.fetchall()[0][0]
+
+            dst_path = os.path.join("video_thumbnails", ch_id, video_id) + ".jpg"
+
+            with urllib.request.urlopen(thumbnail_url) as web_img:
+                data = web_img.read()
+                with open(dst_path, mode="wb") as local_img:
+                    local_img.write(data)
 
 
 if __name__ == "__main__":
@@ -463,5 +512,7 @@ if __name__ == "__main__":
     mysql.assign_published_index()
     mysql.close()
     """
+
+    #mysql = api_to_mysql(video_data = video_data)
 
 
