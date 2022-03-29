@@ -504,6 +504,7 @@ if __name__ == "__main__":
     mysql.assign_published_index()
     mysql.close()
 
+
     """
     video_data = pickle_load()    #selenium_to mysqlでvideo_idをpickleで保存した場合
 
