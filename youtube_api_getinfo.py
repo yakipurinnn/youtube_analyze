@@ -5,23 +5,24 @@
 #日時計算など: https://note.nkmk.me/python-datetime-pytz-timezone/
 #youtube api 500件以上取得できなくなる問題について: https://zenn.dev/jqinglong/articles/1161615fdaa6f6
 
-import pandas as pd
-import numpy as np
 import os
 import pickle
 import re
 import MySQLdb
 import datetime
 import urllib.request
+import pandas as pd
+import numpy as np
 from logging import exception
 from multiprocessing.reduction import duplicate
 from MySQLdb._exceptions import OperationalError
 from dateutil.relativedelta import relativedelta
 from urllib.error import HTTPError
-from youtube_sql2 import selenium_to_mysql
 from youtube_sql2 import open_json
 from apiclient.discovery import build
 from apiclient.errors import HttpError
+
+from youtube_sql2 import seleniumToMysql
 
 
 def pickle_load_id():
@@ -43,7 +44,7 @@ def pickle_load():    #pandasで保存したdata_frameを返す
 
         return video_data
 
-class ytd_api:
+class youtubeApi:
     """
     youtube apiを利用し、動画のデータを取得する。
     以下メソッドについて、extract_infoは動画の詳細情報を取得する。
@@ -292,7 +293,7 @@ class ytd_api:
         print(self.video_stats)
 
 
-class api_to_mysql(selenium_to_mysql):
+class apiToMysql(seleniumToMysql):
     def __init__(self, dt_now=datetime.datetime.now(), video_data=None, ch_data=None, user="root", passwd="Takanori6157", host="localhost", db="holo_analyze"):
         super().__init__(dt_now=dt_now, video_data=video_data, user=user, passwd=passwd, host=host, db=db)
         self.ch_data = ch_data
@@ -436,7 +437,7 @@ class api_to_mysql(selenium_to_mysql):
         """
         days_agoに日数を指定してデータベースから直近 N 日の video_id を検索し、リストで返す
         """
-        dt_now=datetime.datetime.now()
+        dt_now = datetime.datetime.now()
         dt_delta = datetime.timedelta(days=days_ago)
         dt_now -= dt_delta
         dt_now = dt_now.strftime("%Y-%m-%d %H:%M:%S")
@@ -457,7 +458,7 @@ class api_to_mysql(selenium_to_mysql):
                             where t1.video_id = t2.video_id""")
         self.conn.commit()
 
-class save_thumbnail:
+class saveThumbnail:
     def __init__(self, video_id_list, user="root", passwd="Takanori6157", host="localhost", db="holo_analyze"):
         self.conn = MySQLdb.connect(user=user, passwd=passwd, host=host, db=db)    #mysqlに接続
         self.cursor = self.conn.cursor()
@@ -488,17 +489,18 @@ if __name__ == "__main__":
     ch_list_path = "ch_list.json"
     ch_list = open_json(ch_list_path)
 
-    mysql = api_to_mysql()
+    mysql = apiToMysql()
 
     current_id_list = mysql.fetch_video_id()
+    mysql.close()
 
-    youtube = ytd_api(key_list)
+    youtube = youtubeApi(key_list)
+    ch_data = youtube.extract_ch_info(ch_list)
     video_data = youtube.serch_new_video(ch_list, current_id_list)
     video_data = youtube.extract_info(current_id_list)
-    ch_data = youtube.extract_ch_info(ch_list)
     youtube.save()
 
-    mysql = api_to_mysql(video_data = video_data, ch_data=ch_data)
+    mysql = apiToMysql(video_data = video_data, ch_data=ch_data)
     mysql.api_update()
     mysql.api_ch_update()
     mysql.assign_published_index()
@@ -506,14 +508,11 @@ if __name__ == "__main__":
 
 
     """
-    video_data = pickle_load()    #selenium_to mysqlでvideo_idをpickleで保存した場合
+    video_data = pickle_load()    #selenium_to_mysqlでvideo_idをpickleで保存した場合
 
-    mysql = api_to_mysql(video_data = video_data)
+    mysql = apiToMysql(video_data = video_data)
     mysql.api_update()
     mysql.assign_published_index()
     mysql.close()
     """
-
-    #mysql = api_to_mysql(video_data = video_data)
-
 
