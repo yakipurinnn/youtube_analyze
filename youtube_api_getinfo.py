@@ -489,7 +489,10 @@ if __name__ == "__main__":
     ch_list_path = "ch_list.json"
     ch_list = open_json(ch_list_path)
 
-    mysql = apiToMysql()
+    db_config_path = "db_config.json"
+    db_config = open_json(db_config_path)
+
+    mysql = apiToMysql(user=db_config["user"], passwd=db_config["password"], host=db_config["host"], db=db_config["db"])
 
     current_id_list = mysql.fetch_video_id()
     mysql.close()
@@ -500,7 +503,7 @@ if __name__ == "__main__":
     video_data = youtube.extract_info(current_id_list)
     youtube.save()
 
-    mysql = apiToMysql(video_data = video_data, ch_data=ch_data)
+    mysql = apiToMysql(video_data = video_data, ch_data=ch_data, user=db_config["user"], passwd=db_config["password"], host=db_config["host"], db=db_config["db"])
     mysql.api_update()
     mysql.api_ch_update()
     mysql.assign_published_index()
