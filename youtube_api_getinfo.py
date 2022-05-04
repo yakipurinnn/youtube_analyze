@@ -294,7 +294,7 @@ class youtubeApi:
 
 
 class apiToMysql(seleniumToMysql):
-    def __init__(self, dt_now=datetime.datetime.now(), video_data=None, ch_data=None, user="root", passwd="Takanori6157", host="localhost", db="holo_analyze"):
+    def __init__(self, user, passwd, host, db, dt_now=datetime.datetime.now(), video_data=None, ch_data=None):
         super().__init__(dt_now=dt_now, video_data=video_data, user=user, passwd=passwd, host=host, db=db)
         self.ch_data = ch_data
 
@@ -503,7 +503,7 @@ if __name__ == "__main__":
     video_data = youtube.extract_info(current_id_list)
     youtube.save()
 
-    mysql = apiToMysql(video_data = video_data, ch_data=ch_data, user=db_config["user"], passwd=db_config["password"], host=db_config["host"], db=db_config["db"])
+    mysql = apiToMysql(user=db_config["user"], passwd=db_config["password"], host=db_config["host"], db=db_config["db"], video_data=video_data, ch_data=ch_data)
     mysql.api_update()
     mysql.api_ch_update()
     mysql.assign_published_index()
