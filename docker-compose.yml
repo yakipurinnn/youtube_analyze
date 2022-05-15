@@ -1,0 +1,55 @@
+version: '3.9'
+
+services:
+  #MySQL用コンテナ
+  mariadb:
+    container_name: mariadb
+    image: mariadb:10.4
+    volumes:
+      - ./mariadb:/var/lib/mysql
+      - ./mariadb/my.conf:/etc/mysql/conf.d/my.cnf    #設定ファイルの反映
+    ports:
+      - $DB_PORT:3306
+    environment:
+      - MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
+      - MYSQL_DATABASE=$MYSQL_DATABASE
+      - MYSQL_USER=$MYSQL_USER
+      - MYSQL_PASSWORD=$MYSQL_PASSWORD
+
+  #phpMyAdmin用コンテナ
+  phpmyadmin:
+    container_name: phpMyAdmin
+    depends_on:
+      - mariadb
+    image: phpmyadmin/phpmyadmin
+    environment:
+      PMA_ARBITRARY: 1
+      PMA_HOST: mariadb
+      # PMA_USER: root
+      # PMA_PASSWORD: $MYSQL_ROOT_PASSWORD
+    restart: always
+    volumes:
+      - ./phpMyAdmin/config.inc.php:/etc/phpmyadmin/config.inc.php
+    ports:
+      - $PMA_PORT:80
+
+  #php用コンテナ
+  laravel:
+    container_name: laravel
+    build: ./php
+    volumes:
+      #- ./html:/var/www/html
+      - ./src:/var/www/html
+    ports:
+      - 80:80    #443へリダイレクト
+      - 443:443
+    depends_on:
+      - mariadb
+    environment:
+      - APACHE_DOCUMENT_ROOT=/var/www/html/laravelSample/public
+      # - DB_CONNECTION=mysql
+      # - DB_HOST=db
+      # - DB_PORT=3306
+      # - DB_DATABASE=${DB_NAME}
+      # - DB_USERNAME=${DB_USER}
+      # - DB_PASSWORD=${DB_PASSWORD}
